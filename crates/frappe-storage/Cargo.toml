@@ -1,0 +1,12 @@
+[package]
+name = "frappe-storage"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio = { version = "1.52.3", features = ["full"] }
+futures = "0.3"
+sha2 = "0.10"
+hex = "0.4"
+thiserror = "1.0"
+uuid = { version = "1.8", features = ["v4"] }

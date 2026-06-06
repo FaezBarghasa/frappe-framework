@@ -1,0 +1,21 @@
+[package]
+name = "frappe-net"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio = { version = "1.52.3", features = ["full"] }
+actix-web = { version = "4.13.0", features = ["macros"] }
+surrealdb = { version = "3.0.5", features = ["protocol-ws", "rustls"] }
+pasetors = { version = "0.7.8", features = ["v4", "serde_json", "std"] }
+quiche = { version = "0.29.0", features = ["boring"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+log = "0.4"
+env_logger = "0.11"
+rand = "0.8"
+hex = "0.4"
+uuid = { version = "1.8", features = ["v4"] }
+frappe-meta = { path = "../frappe-meta" }
+frappe-storage = { path = "../frappe-storage" }

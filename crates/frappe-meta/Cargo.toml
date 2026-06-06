@@ -1,0 +1,15 @@
+[package]
+name = "frappe-meta"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio = { version = "1.52.3", features = ["full"] }
+simd-json = "0.14"
+dashmap = "6.0"
+walkdir = "2.5"
+futures = "0.3"
+thiserror = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+surrealdb = { version = "3.0.5", features = ["protocol-ws", "rustls"] }
+log = "0.4"
