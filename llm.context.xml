@@ -1,0 +1,41 @@
+<project name="frappe-framework-core">
+    <system_context>
+        Asynchronous network gateway, concurrent metadata registry, and content-addressed storage core.
+        Target Stack: Tokio 1.52.3, Actix-Web 4.13.0, SurrealDB 3.0.5, Pasetors 0.7.8, Quiche 0.29.0, Simd-JSON 0.14.
+    </system_context>
+
+    <directory_structure>
+        frappe-framework/
+        ├── Cargo.toml
+        └── crates/
+            ├── frappe-net/          # Web, Routing, Auth, and UDP QUIC Gateway
+            │   └── src/
+            │       ├── lib.rs
+            │       ├── h3_server.rs
+            │       ├── routes.rs
+            │       └── middleware/
+            │           ├── tenant.rs
+            │           └── auth.rs
+            ├── frappe-meta/         # SIMD-JSON Metadata registry & SurrealQL compiler
+            │   └── src/
+            │       ├── lib.rs
+            │       ├── schema.rs
+            │       └── registry.rs
+            └── frappe-storage/      # Content-addressable file storage engine
+                └── src/
+                    ├── lib.rs
+                    └── local_fs.rs
+    </directory_structure>
+
+    <key_invariants>
+        <invariant name="HTTP/3 Connection State">
+            The quiche::h3::Connection is stateful and is persisted across UDP packets in the HashMap inside ConnectionState. Do not reconstruct on every poll.
+        </invariant>
+        <invariant name="PASETO Token Middleware">
+            Token validation uses pasetors::local::decrypt matching SymmetricKey&lt;V4&gt; keys. Ephemeral fallback keys must be filled, not reassigned, to prevent compiler warnings.
+        </invariant>
+        <invariant name="Path Traversal Protection">
+            Local FS operations validate bounds using canonicalized directories to prevent traversal breakout.
+        </invariant>
+    </key_invariants>
+</project>
