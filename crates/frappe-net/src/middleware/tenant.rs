@@ -1,8 +1,7 @@
 use actix_web::dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform};
-use actix_web::{Error, HttpMessage, HttpResponse};
+use actix_web::{Error, HttpMessage};
 use std::future::{ready, Ready};
 use std::pin::Pin;
-use std::task::{Context, Poll};
 
 #[derive(Clone, Debug)]
 pub struct TenantContext {

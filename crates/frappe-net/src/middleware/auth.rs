@@ -2,12 +2,14 @@ use actix_web::dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Tr
 use actix_web::{Error, HttpMessage, HttpResponse};
 use actix_web::body::EitherBody;
 use pasetors::keys::SymmetricKey;
-use pasetors::version4::decrypt_local;
+use pasetors::Local;
+use pasetors::version4::V4;
+use pasetors::token::UntrustedToken;
 use pasetors::claims::ClaimsValidationRules;
 use serde::{Deserialize, Serialize};
 use std::future::{ready, Ready};
 use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::convert::TryFrom;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserClaims {
@@ -74,26 +76,33 @@ where
                 
                 // Decrypt token
                 // O(1) decryption logic
-                match decrypt_local(
-                    &key,
-                    auth_val,
-                    &validation_rules,
-                    Some(b"frappe-rust-v2"),
-                    None,
-                ) {
-                    Ok(paseto_json) => {
-                        if let Ok(claims) = serde_json::from_str::<UserClaims>(&paseto_json) {
-                            // Inject validated claims into Request Extensions
-                            req.extensions_mut().insert(claims);
-                            let fut = self.service.call(req);
-                            return Box::pin(async move {
-                                let res = fut.await?;
-                                Ok(res.map_into_left_body())
-                            });
+                match UntrustedToken::<Local, V4>::try_from(auth_val) {
+                    Ok(untrusted_token) => {
+                        match pasetors::local::decrypt(
+                            &key,
+                            &untrusted_token,
+                            &validation_rules,
+                            None,
+                            Some(b"frappe-rust-v2"),
+                        ) {
+                            Ok(trusted_token) => {
+                                if let Ok(claims) = serde_json::from_str::<UserClaims>(trusted_token.payload()) {
+                                    // Inject validated claims into Request Extensions
+                                    req.extensions_mut().insert(claims);
+                                    let fut = self.service.call(req);
+                                    return Box::pin(async move {
+                                        let res = fut.await?;
+                                        Ok(res.map_into_left_body())
+                                    });
+                                }
+                            }
+                            Err(e) => {
+                                log::warn!("PASETO decryption failed: {:?}", e);
+                            }
                         }
                     }
                     Err(e) => {
-                        log::warn!("PASETO decryption failed: {:?}", e);
+                        log::warn!("Invalid PASETO token format: {:?}", e);
                     }
                 }
             }
@@ -107,10 +116,10 @@ where
 }
 
 /// Helper function to retrieve symmetric key from environment or generate an ephemeral one.
-pub fn get_paseto_key() -> std::result::Result<SymmetricKey, String> {
+pub fn get_paseto_key() -> std::result::Result<SymmetricKey<V4>, String> {
     if let Ok(key_str) = std::env::var("PASETO_SECRET_KEY") {
         if let Ok(key_bytes) = hex::decode(key_str) {
-            if let Ok(k) = SymmetricKey::from(&key_bytes) {
+            if let Ok(k) = SymmetricKey::<V4>::from(&key_bytes) {
                 return Ok(k);
             }
         }
@@ -123,7 +132,6 @@ pub fn get_paseto_key() -> std::result::Result<SymmetricKey, String> {
     #[cfg(not(test))]
     {
         use rand::RngCore;
-        let mut key_bytes = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut key_bytes);
     }
     #[cfg(test)]
@@ -131,7 +139,7 @@ pub fn get_paseto_key() -> std::result::Result<SymmetricKey, String> {
         key_bytes = [7u8; 32]; // Consistent dummy key for unit testing
     }
     
-    SymmetricKey::from(&key_bytes).map_err(|e| format!("{:?}", e))
+    SymmetricKey::<V4>::from(&key_bytes).map_err(|e| format!("{:?}", e))
 }
 
 #[cfg(test)]
