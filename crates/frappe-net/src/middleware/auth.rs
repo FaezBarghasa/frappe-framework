@@ -136,7 +136,7 @@ pub fn get_paseto_key() -> std::result::Result<SymmetricKey<V4>, String> {
     }
     #[cfg(test)]
     {
-        key_bytes = [7u8; 32]; // Consistent dummy key for unit testing
+        key_bytes.fill(7u8); // Consistent dummy key for unit testing
     }
     
     SymmetricKey::<V4>::from(&key_bytes).map_err(|e| format!("{:?}", e))
@@ -147,7 +147,8 @@ mod tests {
     use super::*;
     use actix_web::test::{self, TestRequest};
     use actix_web::{web, App, Responder};
-    use pasetors::version4::encrypt_local;
+    use pasetors::claims::Claims;
+    use pasetors::local;
 
     async fn index(req: actix_web::HttpRequest) -> impl Responder {
         let claims = req.extensions().get::<UserClaims>().cloned();
@@ -163,19 +164,16 @@ mod tests {
         )
         .await;
 
-        let claims = UserClaims {
-            user_id: "user_123".to_string(),
-            roles: vec!["admin".to_string()],
-        };
-        let claims_str = serde_json::to_string(&claims).unwrap();
+        let mut claims = Claims::new().unwrap();
+        claims.add_additional("user_id", "user_123").unwrap();
+        claims.add_additional("roles", vec!["admin".to_string()]).unwrap();
         
         let key = get_paseto_key().unwrap();
-        let token = encrypt_local(
+        let token = local::encrypt(
             &key,
-            &claims_str,
+            &claims,
             None,
             Some(b"frappe-rust-v2"),
-            None,
         ).unwrap();
 
         let req = TestRequest::default()
