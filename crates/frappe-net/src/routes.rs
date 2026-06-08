@@ -1,10 +1,21 @@
 use actix_web::{web, HttpResponse, Responder};
+use serde::Deserialize;
 use serde_json::Value;
 use surrealdb::Surreal;
 use surrealdb::engine::remote::ws::Client;
 use crate::middleware::tenant::TenantContext;
+use crate::middleware::auth::UserClaims;
+use frappe_meta::registry::SchemaRegistry;
+use frappe_meta::schema::execute_schema_ddl;
 
 pub type Db = Surreal<Client>;
+
+#[derive(Deserialize)]
+pub struct ProvisionRequest {
+    pub tenant_id: String,
+    pub db_user: String,
+    pub db_pass: String,
+}
 
 /// Configures route endpoints for Actix-Web.
 pub fn configure_routes(cfg: &mut web::ServiceConfig) {
@@ -14,6 +25,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             .route("/document/{doctype}/{id}", web::get().to(get_document))
             .route("/document/{doctype}/{id}", web::put().to(update_document))
             .route("/document/{doctype}/{id}", web::delete().to(delete_document))
+            .route("/press/provision", web::post().to(provision_tenant))
     );
 }
 
@@ -125,4 +137,68 @@ async fn delete_document(
             HttpResponse::InternalServerError().body(format!("DB error: {:?}", e))
         }
     }
+}
+
+/// Provision a new tenant namespace and database in SurrealDB.
+async fn provision_tenant(
+    db: web::Data<Db>,
+    claims: Option<web::ReqData<UserClaims>>,
+    body: web::Json<ProvisionRequest>,
+) -> impl Responder {
+    // Check permissions
+    if let Some(claims) = claims {
+        if !claims.roles.contains(&"System Manager".to_string()) && !claims.roles.contains(&"root".to_string()) {
+            return HttpResponse::Forbidden().body("Insufficient permissions");
+        }
+    } else {
+        return HttpResponse::Unauthorized().body("Authentication required");
+    }
+
+    let req = body.into_inner();
+    let tenant_id = req.tenant_id;
+    let db = db.into_inner();
+
+    // 1. Provision namespaces using SurrealQL
+    let query = format!(
+        "DEFINE NAMESPACE {}; \
+         USE NS {}; \
+         DEFINE DATABASE frappe; \
+         USE DB frappe; \
+         DEFINE USER {} ON NAMESPACE PASSWORD '{}' ROLES OWNER;",
+        tenant_id, tenant_id, req.db_user, req.db_pass
+    );
+
+    match db.query(&query).await {
+        Ok(res) => {
+            if let Err(e) = res.check() {
+                return HttpResponse::InternalServerError().body(format!("Failed to execute provisioning DDL: {}", e));
+            }
+        }
+        Err(e) => {
+            return HttpResponse::InternalServerError().body(format!("Provisioning failed: {}", e));
+        }
+    }
+
+    // Switch to new namespace for DDL execution
+    if let Err(e) = db.use_ns(&tenant_id).use_db("frappe").await {
+        return HttpResponse::InternalServerError().body(format!("Failed to switch to provisioned database: {}", e));
+    }
+
+    // 2. Initialize default schemas
+    let registry = SchemaRegistry::new();
+    // Assuming "apps" is the default directory for schemas, and ignoring errors during crawl for now to continue provision
+    let _ = registry.crawl_and_load_schemas("apps").await;
+
+    let schemas = registry.get_all_schemas();
+    for schema in schemas {
+        if let Err(e) = execute_schema_ddl(&db, &schema).await {
+            log::error!("Failed to execute DDL for schema {}: {}", schema.name, e);
+            // Non-fatal error for provisioning, but logged
+        }
+    }
+
+    HttpResponse::Ok().json(serde_json::json!({
+        "status": "success",
+        "message": format!("Tenant {} provisioned successfully", tenant_id)
+    }))
 }

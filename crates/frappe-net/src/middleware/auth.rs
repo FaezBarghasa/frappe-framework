@@ -59,8 +59,8 @@ where
             .get("Authorization")
             .and_then(|h| h.to_str().ok());
 
-        if let Some(auth_val) = auth_header {
-            if auth_val.starts_with("v4.local.") {
+        if let Some(auth_val) = auth_header
+            && auth_val.starts_with("v4.local.") {
                 // Get or generate symmetric key safely
                 let key = match get_paseto_key() {
                     Ok(k) => k,
@@ -106,7 +106,6 @@ where
                     }
                 }
             }
-        }
 
         // Return 401 Unauthorized if token validation fails
         let (r, _) = req.into_parts();
@@ -117,13 +116,11 @@ where
 
 /// Helper function to retrieve symmetric key from environment or generate an ephemeral one.
 pub fn get_paseto_key() -> std::result::Result<SymmetricKey<V4>, String> {
-    if let Ok(key_str) = std::env::var("PASETO_SECRET_KEY") {
-        if let Ok(key_bytes) = hex::decode(key_str) {
-            if let Ok(k) = SymmetricKey::<V4>::from(&key_bytes) {
+    if let Ok(key_str) = std::env::var("PASETO_SECRET_KEY")
+        && let Ok(key_bytes) = hex::decode(key_str)
+            && let Ok(k) = SymmetricKey::<V4>::from(&key_bytes) {
                 return Ok(k);
             }
-        }
-    }
     
     // Fallback: Generate ephemeral key for security test sandbox and log warning
     log::warn!("Generating ephemeral PASETO secret key. Instance-isolated!");

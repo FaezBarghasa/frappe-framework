@@ -1,4 +1,6 @@
 use serde::{Deserialize, Serialize};
+use surrealdb::Surreal;
+use surrealdb::engine::remote::ws::Client;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DocField {
@@ -47,4 +49,27 @@ pub fn compile_schema_to_surrealql(schema: &DocTypeSchema) -> Vec<String> {
     }
 
     ddl
+}
+
+/// Execute dynamic DDL queries against SurrealDB.
+pub async fn execute_schema_ddl(db: &Surreal<Client>, schema: &DocTypeSchema) -> Result<(), String> {
+    let ddl_queries = compile_schema_to_surrealql(schema);
+
+    // Execute the dynamic queries against the connected SurrealDB instance inside an administrative transaction scope.
+    let mut query = String::from("BEGIN TRANSACTION;\n");
+    for q in ddl_queries {
+        query.push_str(&q);
+        query.push('\n');
+    }
+    query.push_str("COMMIT TRANSACTION;\n");
+
+    match db.query(&query).await {
+        Ok(response) => {
+            if let Err(e) = response.check() {
+                return Err(format!("Transaction failed: {}", e));
+            }
+            Ok(())
+        }
+        Err(e) => Err(format!("Query execution failed: {}", e)),
+    }
 }

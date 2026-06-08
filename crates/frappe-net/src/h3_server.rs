@@ -128,8 +128,8 @@ impl H3Server {
                             if conn_state.quic.is_established() {
                                 // Initialize H3 connection if not already done
                                 if conn_state.h3.is_none() {
-                                    let mut h3_config = quiche::h3::Config::new().unwrap();
-                                    match quiche::h3::Connection::with_transport(&mut conn_state.quic, &mut h3_config) {
+                                    let h3_config = quiche::h3::Config::new().unwrap();
+                                    match quiche::h3::Connection::with_transport(&mut conn_state.quic, &h3_config) {
                                         Ok(h3_conn) => {
                                             conn_state.h3 = Some(h3_conn);
                                         }
@@ -140,16 +140,16 @@ impl H3Server {
                                 }
 
                                 if let Some(ref mut h3_conn) = conn_state.h3 {
-                                    let mut headers = Vec::new();
+                                    let mut _headers = Vec::new();
                                     loop {
                                         match h3_conn.poll(&mut conn_state.quic) {
                                             Ok((stream_id, quiche::h3::Event::Headers { list, .. })) => {
-                                                headers = list;
+                                                _headers = list;
                                                 // Wait for finished request
                                                 let (resp_tx, mut resp_rx) = mpsc::channel(1);
                                                 let h3_req = H3Request {
                                                     stream_id,
-                                                    headers: headers.clone(),
+                                                    headers: _headers.clone(),
                                                     body: Vec::new(),
                                                     response_tx: resp_tx,
                                                 };
