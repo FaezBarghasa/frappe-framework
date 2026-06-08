@@ -22,19 +22,22 @@ impl SchemaRegistry {
         self.cache.get(doctype).map(|r| r.value().clone())
     }
 
+    /// Retrieve all schemas from cache.
+    pub fn get_all_schemas(&self) -> Vec<DocTypeSchema> {
+        self.cache.iter().map(|r| r.value().clone()).collect()
+    }
+
     /// Crawls a directory for `.json` schemas in parallel, parsing them using SIMD-JSON.
     pub async fn crawl_and_load_schemas(&self, apps_dir: &str) -> Result<(), String> {
         let mut paths = Vec::new();
 
         // Find JSON paths recursively using walkdir
         for entry in WalkDir::new(apps_dir).into_iter().filter_map(|e| e.ok()) {
-            if entry.file_type().is_file() {
-                if let Some(ext) = entry.path().extension() {
-                    if ext == "json" {
+            if entry.file_type().is_file()
+                && let Some(ext) = entry.path().extension()
+                    && ext == "json" {
                         paths.push(entry.into_path());
                     }
-                }
-            }
         }
 
         let mut futures = FuturesUnordered::new();
@@ -65,5 +68,11 @@ impl SchemaRegistry {
         }
 
         Ok(())
+    }
+}
+
+impl Default for SchemaRegistry {
+    fn default() -> Self {
+        Self::new()
     }
 }
