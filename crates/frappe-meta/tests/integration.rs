@@ -9,6 +9,7 @@ fn test_schema_ddl_compilation() {
     let schema = DocTypeSchema {
         name: "TestDoc".to_string(),
         is_submittable: Some(false),
+        permissions: None,
         fields: vec![
             DocField {
                 fieldname: "title".to_string(),
@@ -72,6 +73,7 @@ async fn test_db_operations_mocked_or_skipped() {
     let schema = DocTypeSchema {
         name: "TaskDoc".to_string(),
         is_submittable: Some(false),
+        permissions: None,
         fields: vec![
             DocField {
                 fieldname: "description".to_string(),

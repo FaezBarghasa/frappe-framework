@@ -4,6 +4,9 @@ members = [
     "crates/frappe-net",
     "crates/frappe-meta",
     "crates/frappe-storage",
+    "crates/frappe-insights",
+    "crates/frappe-builder",
+    "crates/frappe-drive",
 ]
 
 [package]
