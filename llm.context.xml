@@ -1,12 +1,19 @@
 <project name="frappe-framework-core">
     <system_context>
-        Asynchronous network gateway, concurrent metadata registry, and content-addressed storage core.
-        Target Stack: Tokio 1.52.3, Actix-Web 4.13.0, SurrealDB 3.0.5, Pasetors 0.7.8, Quiche 0.29.0, Simd-JSON 0.14.
+        Asynchronous network gateway, concurrent metadata registry, content-addressed storage core, and robust document business logic layer.
+        Target Stack: Tokio 1.52.3, Actix-Web 4.13.0, SurrealDB 3.0.5, Pasetors 0.7.8, Quiche 0.29.0, Simd-JSON 0.14, Rhai 1.19.0.
     </system_context>
 
     <directory_structure>
         frappe-framework/
         ├── Cargo.toml
+        ├── src/                     # Core business logic
+        │   ├── lib.rs
+        │   └── document/            # Document lifecycle, scripting, and permissions
+        │       ├── mod.rs
+        │       ├── lifecycle.rs
+        │       ├── scripting.rs
+        │       └── permissions.rs
         └── crates/
             ├── frappe-net/          # Web, Routing, Auth, and UDP QUIC Gateway
             │   └── src/
@@ -36,6 +43,12 @@
         </invariant>
         <invariant name="Path Traversal Protection">
             Local FS operations validate bounds using canonicalized directories to prevent traversal breakout.
+        </invariant>
+        <invariant name="Document Lifecycle">
+            Documents must strictly follow the Draft (0) -> Submitted (1) -> Cancelled (2) state machine. Submitted documents cannot be modified except for explicitly allowed fields. Cancelled documents are completely locked.
+        </invariant>
+        <invariant name="Scripting Sandbox">
+            Rhai scripting environment must remain sandboxed to prevent resource exhaustion (max_operations) and restrict database operations to synchronous helpers within the async context.
         </invariant>
     </key_invariants>
 </project>
