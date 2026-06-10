@@ -6,7 +6,7 @@ use surrealdb::engine::remote::ws::Client;
 use crate::middleware::tenant::TenantContext;
 use crate::middleware::auth::UserClaims;
 use frappe_meta::registry::SchemaRegistry;
-use frappe_meta::schema::execute_schema_ddl;
+use frappe_meta::migration::SchemaManager;
 
 pub type Db = Surreal<Client>;
 
@@ -190,8 +190,9 @@ async fn provision_tenant(
     let _ = registry.crawl_and_load_schemas("apps").await;
 
     let schemas = registry.get_all_schemas();
+    let manager = SchemaManager::new(&db);
     for schema in schemas {
-        if let Err(e) = execute_schema_ddl(&db, &schema).await {
+        if let Err(e) = manager.sync_schema(&schema).await {
             log::error!("Failed to execute DDL for schema {}: {}", schema.name, e);
             // Non-fatal error for provisioning, but logged
         }

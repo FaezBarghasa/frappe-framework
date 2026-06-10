@@ -1,10 +1,8 @@
 use actix_web::{web, App, HttpServer, HttpResponse};
-use surrealdb::engine::remote::ws::Client;
 use surrealdb::engine::remote::ws::Ws;
 use surrealdb::Surreal;
-use std::sync::Arc;
 use frappe_net::routes;
-use frappe_net::middleware::tenant::TenantMiddleware;
+use frappe_net::middleware::tenant::TenantResolver;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -19,12 +17,12 @@ async fn main() -> std::io::Result<()> {
     });
     
     // Log in as root (for provisioning / schema purposes)
-    db.signin(surrealdb::opt::auth::Root {
-        username: "root",
-        password: "root",
-    }).await.unwrap_or_else(|e| {
+    if let Err(e) = db.signin(surrealdb::opt::auth::Root {
+        username: "root".to_string(),
+        password: "root".to_string(),
+    }).await {
         log::error!("Failed to authenticate with SurrealDB: {}", e);
-    });
+    }
 
     let db_data = web::Data::new(db);
 
@@ -33,7 +31,7 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move || {
         App::new()
             .app_data(db_data.clone())
-            .wrap(TenantMiddleware)
+            .wrap(TenantResolver)
             // .wrap(AuthMiddleware) -> Omitted here for simplicity, apply per route in configure_routes
             .configure(routes::configure_routes)
             .route("/health", web::get().to(|| async { HttpResponse::Ok().body("OK") }))

@@ -1,14 +1,25 @@
 use serde::{Deserialize, Serialize};
-use surrealdb::Surreal;
-use surrealdb::engine::remote::ws::Client;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DocField {
     pub fieldname: String,
-    pub fieldtype: String, // e.g. "Data", "Int", "Link", "Table"
+    pub fieldtype: String, // e.g. "Data", "Int", "Float", "Check", "Link", "Table", "Text Editor"
     pub label: Option<String>,
     pub reqd: Option<bool>,
+    pub unique: Option<bool>,
     pub options: Option<String>, // used for Link target doctype or Select options
+    pub default: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DocPerm {
+    pub role: String,
+    pub read: Option<bool>,
+    pub write: Option<bool>,
+    pub create: Option<bool>,
+    pub delete: Option<bool>,
+    pub submit: Option<bool>,
+    pub cancel: Option<bool>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -16,26 +27,45 @@ pub struct DocTypeSchema {
     pub name: String,
     pub fields: Vec<DocField>,
     pub is_submittable: Option<bool>,
+    pub permissions: Option<Vec<DocPerm>>,
 }
 
-/// Helper function to compile fields to SurrealQL DDL statements.
+
+/// Helper function to map Frappe FieldTypes to SurrealDB types.
+/// This acts as the Database Mapping Registry.
+pub fn map_field_type_to_surreal(field: &DocField) -> &'static str {
+    match field.fieldtype.as_str() {
+        "Int" => "int",
+        "Float" | "Currency" => "float",
+        "Check" => "bool",
+        "Link" => "record",
+        "Table" => "array", // Array of nested record IDs / child table references
+        "Date" | "Datetime" | "Time" => "datetime",
+        _ => "string", // Default to string for Data, Text, Text Editor, Select, etc.
+    }
+}
+
+/// Compiles a DocType schema to SurrealQL DDL statements for a SCHEMAFULL table.
 pub fn compile_schema_to_surrealql(schema: &DocTypeSchema) -> Vec<String> {
     let table_name = &schema.name;
     let mut ddl = vec![
-        format!("DEFINE TABLE {} SCHEMALESS;", table_name),
+        format!("DEFINE TABLE {} SCHEMAFULL;", table_name),
+        // System fields
+        format!("DEFINE FIELD creation ON {} TYPE datetime DEFAULT time::now();", table_name),
+        format!("DEFINE FIELD modified ON {} TYPE datetime DEFAULT time::now();", table_name),
+        format!("DEFINE FIELD modified_by ON {} TYPE string;", table_name),
+        format!("DEFINE FIELD owner ON {} TYPE string;", table_name),
+        format!("DEFINE FIELD docstatus ON {} TYPE int DEFAULT 0;", table_name),
     ];
 
     for field in &schema.fields {
-        let field_name = &field.fieldname;
-        let field_type = match field.fieldtype.as_str() {
-            "Int" => "int",
-            "Float" => "float",
-            "Check" => "bool",
-            "Link" => "record",
-            "Table" => "array", // Array of nested record IDs
-            _ => "string", // Default to string for Data, Text, etc.
-        };
+        // Skip table/child fields in main table (they are handled as arrays of links or separate tables)
+        if field.fieldtype == "Table" {
+            ddl.push(format!("DEFINE FIELD {} ON {} TYPE array;", field.fieldname, table_name));
+            continue;
+        }
 
+        let field_type = map_field_type_to_surreal(field);
         let assert_clause = if field.reqd.unwrap_or(false) {
             " ASSERT $value != NONE"
         } else {
@@ -44,32 +74,16 @@ pub fn compile_schema_to_surrealql(schema: &DocTypeSchema) -> Vec<String> {
 
         ddl.push(format!(
             "DEFINE FIELD {} ON {} TYPE {}{};",
-            field_name, table_name, field_type, assert_clause
+            field.fieldname, table_name, field_type, assert_clause
         ));
+
+        if field.unique.unwrap_or(false) {
+            ddl.push(format!(
+                "DEFINE INDEX {}_unique ON {} COLUMNS {} UNIQUE;",
+                field.fieldname, table_name, field.fieldname
+            ));
+        }
     }
 
     ddl
-}
-
-/// Execute dynamic DDL queries against SurrealDB.
-pub async fn execute_schema_ddl(db: &Surreal<Client>, schema: &DocTypeSchema) -> Result<(), String> {
-    let ddl_queries = compile_schema_to_surrealql(schema);
-
-    // Execute the dynamic queries against the connected SurrealDB instance inside an administrative transaction scope.
-    let mut query = String::from("BEGIN TRANSACTION;\n");
-    for q in ddl_queries {
-        query.push_str(&q);
-        query.push('\n');
-    }
-    query.push_str("COMMIT TRANSACTION;\n");
-
-    match db.query(&query).await {
-        Ok(response) => {
-            if let Err(e) = response.check() {
-                return Err(format!("Transaction failed: {}", e));
-            }
-            Ok(())
-        }
-        Err(e) => Err(format!("Query execution failed: {}", e)),
-    }
 }
