@@ -1,0 +1,4 @@
+[env]
+CFLAGS = "-m64"
+CXXFLAGS = "-m64"
+BINDGEN_EXTRA_CLANG_ARGS = "-m64"

@@ -2,6 +2,9 @@
 <module type="EMPTY_MODULE" version="4">
   <component name="NewModuleRootManager">
     <content url="file://$MODULE_DIR$">
+      <sourceFolder url="file://$MODULE_DIR$/crates/frappe-meta/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/frappe-net/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/frappe-storage/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>
