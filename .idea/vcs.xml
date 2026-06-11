@@ -2,5 +2,7 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/target_stable/debug/build/boring-sys-e22c7a7934a17417/out/boringssl" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/target_stable/debug/build/boring-sys-fbcb63345a5d7aa6/out/boringssl" vcs="Git" />
   </component>
 </project>
