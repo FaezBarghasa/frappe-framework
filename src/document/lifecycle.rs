@@ -46,6 +46,41 @@ pub trait DocumentLifecycle {
 pub struct DocLifecycleController;
 
 impl DocLifecycleController {
+    /// Runs a custom scripting hook on the document before saving it.
+    pub fn run_before_save(
+        sandbox: &crate::document::scripting::ScriptSandbox,
+        script: &str,
+        doc: serde_json::Map<String, Value>,
+    ) -> Result<serde_json::Map<String, Value>, DocError> {
+        sandbox.execute_script(script, doc).map_err(|e| DocError::Validation(e))
+    }
+
+    /// Executes submitting operations/queries atomically in SurrealDB.
+    pub async fn run_on_submit<C: surrealdb::Connection>(
+        db: &surrealdb::Surreal<C>,
+        ns: &str,
+        database: &str,
+        queries: &[String],
+    ) -> Result<(), DocError> {
+        if queries.is_empty() {
+            return Ok(());
+        }
+
+        db.use_ns(ns).use_db(database).await.map_err(|e| DocError::Validation(e.to_string()))?;
+
+        let mut tx_query = "BEGIN TRANSACTION;\n".to_string();
+        for q in queries {
+            tx_query.push_str(q);
+            tx_query.push_str("\n");
+        }
+        tx_query.push_str("COMMIT TRANSACTION;");
+
+        let res = db.query(&tx_query).await.map_err(|e| DocError::Validation(e.to_string()))?;
+        res.check().map_err(|e| DocError::Validation(e.to_string()))?;
+
+        Ok(())
+    }
+
     /// Validates the transition between the old document and new document states.
     /// Ensures status moves correctly, fields are not mutated post-submission unless allowed, and cancelled docs are locked.
     pub fn validate_transition(
@@ -92,11 +127,9 @@ impl DocLifecycleController {
 
                 if old_val != new_val {
                     // Check if field type options/metadata allows modification post-submit
-                    // In Frappe, we check if allow_on_submit is true.
-                    // We will check options or add a field to DocField.
-                    // Let's assume unique or a specific custom check or default to false.
                     let allow_on_submit = field.fieldname == "modified" 
-                        || field.fieldname == "modified_by"; // always allow system update fields
+                        || field.fieldname == "modified_by"
+                        || field.allow_on_submit.unwrap_or(false); // check schema allow_on_submit field
 
                     if !allow_on_submit {
                         return Err(DocError::ImmutableFieldUpdate {

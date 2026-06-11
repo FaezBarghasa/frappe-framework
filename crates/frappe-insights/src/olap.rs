@@ -80,8 +80,8 @@ impl OlapEngine {
     pub fn execute_query(&self, sql: &str, params: &[&dyn duckdb::ToSql]) -> Result<Vec<JsonValue>, OlapError> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(sql)?;
-        let col_names = stmt.column_names();
         let mut rows = stmt.query(params)?;
+        let col_names = rows.as_ref().map(|s| s.column_names()).unwrap_or_default();
 
         let mut results = Vec::new();
         while let Some(row) = rows.next()? {

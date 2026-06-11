@@ -5,21 +5,39 @@ use frappe_meta::db::DatabaseClient;
 use std::collections::HashMap;
 
 pub struct ScriptSandbox {
-    engine: Engine,
+    engine: Arc<Engine>,
+    start_time: Arc<std::sync::Mutex<std::time::Instant>>,
+    ast_cache: dashmap::DashMap<String, Arc<rhai::AST>>,
 }
 
 impl ScriptSandbox {
+    /// Creates a new ScriptSandbox instance, configuring limits and helper functions.
     pub fn new(db_client: Arc<DatabaseClient>) -> Self {
         let mut engine = Engine::new();
 
         // 1. Configure sandboxing limits
         engine.set_max_operations(5000); // Prevent infinite loops or heavy computations
 
-        // 2. Register Database helper functions
+        let start_time = Arc::new(std::sync::Mutex::new(std::time::Instant::now()));
+        let start_time_clone = start_time.clone();
+
+        // 2. Configure runtime timeout
+        engine.on_progress(move |_ops| {
+            let elapsed = {
+                let lock = start_time_clone.lock().unwrap();
+                *lock
+            };
+            if elapsed.elapsed() > std::time::Duration::from_millis(500) {
+                Some(Dynamic::from("Script execution timeout (500ms exceeded)".to_string()))
+            } else {
+                None
+            }
+        });
+
+        // 3. Register Database helper functions
         let db_clone = db_client.clone();
         engine.register_fn("db_get_value", move |doctype: String, _name: String, field: String| -> String {
             let db = db_clone.clone();
-            // Since this is evaluated within a sync environment or we can block_on the async call
             let fut = async move {
                 let fields = vec![field.as_str()];
                 match db.get_list(&doctype, HashMap::new(), fields, 1, 0).await {
@@ -37,13 +55,24 @@ impl ScriptSandbox {
                 }
             };
             
-            // Execute the future synchronously using tokio block_in_place or block_on
+            // Execute the future synchronously using tokio block_in_place
             tokio::task::block_in_place(|| {
                 tokio::runtime::Handle::current().block_on(fut)
             })
         });
 
-        Self { engine }
+        Self {
+            engine: Arc::new(engine),
+            start_time,
+            ast_cache: dashmap::DashMap::new(),
+        }
+    }
+
+    /// Compiles and caches a script by key name.
+    pub fn compile_and_cache(&self, name: &str, source: &str) -> Result<(), String> {
+        let ast = self.engine.compile(source).map_err(|e| format!("Script Compilation Error: {}", e))?;
+        self.ast_cache.insert(name.to_string(), Arc::new(ast));
+        Ok(())
     }
 
     /// Convert serde_json::Value to Rhai Dynamic
@@ -110,14 +139,27 @@ impl ScriptSandbox {
         script: &str,
         doc: JsonMap<String, JsonValue>,
     ) -> Result<JsonMap<String, JsonValue>, String> {
+        // Reset the start time before execution
+        {
+            let mut lock = self.start_time.lock().unwrap();
+            *lock = std::time::Instant::now();
+        }
+
         let mut scope = Scope::new();
 
         // Convert input document to Rhai Dynamic map
         let doc_dynamic = self.json_to_dynamic(JsonValue::Object(doc));
         scope.push("doc", doc_dynamic);
 
-        // Compile and run the script
-        let ast = self.engine.compile(script).map_err(|e| format!("Script Compilation Error: {}", e))?;
+        // Compile or fetch from cache
+        let ast = if let Some(cached_ast) = self.ast_cache.get(script) {
+            cached_ast.clone()
+        } else {
+            let ast = self.engine.compile(script).map_err(|e| format!("Script Compilation Error: {}", e))?;
+            let ast_arc = Arc::new(ast);
+            self.ast_cache.insert(script.to_string(), ast_arc.clone());
+            ast_arc
+        };
         
         self.engine.run_ast_with_scope(&mut scope, &ast)
             .map_err(|e| format!("Script Runtime Error: {}", e))?;

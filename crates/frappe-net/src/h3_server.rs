@@ -32,6 +32,7 @@ pub struct H3Response {
 struct ConnectionState {
     quic: quiche::Connection,
     h3: Option<quiche::h3::Connection>,
+    #[allow(dead_code)]
     sni: Option<String>,
 }
 
@@ -129,7 +130,7 @@ impl H3Server {
 
                             if !conns.contains_key(&dcid) {
                                 let local_addr = socket.local_addr().unwrap();
-                                let mut c = quiche::accept(&scid, Some(&dcid), local_addr, from, &mut config).unwrap();
+                                let c = quiche::accept(&scid, Some(&dcid), local_addr, from, &mut config).unwrap();
                                 let sni = c.server_name().map(|s| s.to_string());
                                 log::info!("New QUIC connection from {:?}, SNI: {:?}", from, sni);
 

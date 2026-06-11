@@ -10,6 +10,7 @@ fn test_schema_ddl_compilation() {
         name: "TestDoc".to_string(),
         is_submittable: Some(false),
         permissions: None,
+        is_child_table: None,
         fields: vec![
             DocField {
                 fieldname: "title".to_string(),
@@ -19,6 +20,7 @@ fn test_schema_ddl_compilation() {
                 unique: Some(true),
                 options: None,
                 default: None,
+                allow_on_submit: None,
             },
             DocField {
                 fieldname: "quantity".to_string(),
@@ -28,6 +30,7 @@ fn test_schema_ddl_compilation() {
                 unique: None,
                 options: None,
                 default: None,
+                allow_on_submit: None,
             },
         ],
     };
@@ -74,6 +77,7 @@ async fn test_db_operations_mocked_or_skipped() {
         name: "TaskDoc".to_string(),
         is_submittable: Some(false),
         permissions: None,
+        is_child_table: None,
         fields: vec![
             DocField {
                 fieldname: "description".to_string(),
@@ -83,6 +87,7 @@ async fn test_db_operations_mocked_or_skipped() {
                 unique: None,
                 options: None,
                 default: None,
+                allow_on_submit: None,
             },
             DocField {
                 fieldname: "status".to_string(),
@@ -92,6 +97,7 @@ async fn test_db_operations_mocked_or_skipped() {
                 unique: None,
                 options: None,
                 default: None,
+                allow_on_submit: None,
             },
         ],
     };
