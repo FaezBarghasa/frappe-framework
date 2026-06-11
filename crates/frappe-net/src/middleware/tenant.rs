@@ -6,6 +6,7 @@ use std::pin::Pin;
 #[derive(Clone, Debug)]
 pub struct TenantContext {
     pub tenant_id: String,
+    pub namespace: String,
 }
 
 pub struct TenantResolver;
@@ -51,15 +52,27 @@ where
             .and_then(|h| h.to_str().ok())
             .unwrap_or("default_site");
 
-        // Sanitize Host string: Replace non-alphanumeric characters with underscores
-        // O(N) complexity where N is host length
-        let sanitized_host: String = host
+        // Extract subdomain
+        let host_no_port = host.split(':').next().unwrap_or(host);
+        let tenant_id = if host_no_port == "localhost" || host_no_port == "127.0.0.1" {
+            "default_site".to_string()
+        } else {
+            let parts: Vec<&str> = host_no_port.split('.').collect();
+            if parts.len() > 1 {
+                parts[0].to_string()
+            } else {
+                "default_site".to_string()
+            }
+        };
+
+        let sanitized_tenant_id: String = tenant_id
             .chars()
             .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
             .collect();
 
         let tenant_context = TenantContext {
-            tenant_id: sanitized_host,
+            tenant_id: sanitized_tenant_id,
+            namespace: "frappe_cloud".to_string(),
         };
 
         // Inject in O(1) complexity
@@ -98,6 +111,13 @@ mod tests {
             .to_request();
 
         let resp = test::call_and_read_body(&app, req).await;
-        assert_eq!(resp, actix_web::web::Bytes::from_static(b"site1_local"));
+        assert_eq!(resp, actix_web::web::Bytes::from_static(b"site1"));
+
+        let req = TestRequest::default()
+            .insert_header(("Host", "localhost:8080"))
+            .to_request();
+
+        let resp = test::call_and_read_body(&app, req).await;
+        assert_eq!(resp, actix_web::web::Bytes::from_static(b"default_site"));
     }
 }

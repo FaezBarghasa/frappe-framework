@@ -11,11 +11,14 @@ pasetors = { version = "0.7.8", features = ["v4", "serde_json", "std"] }
 quiche = "0.29.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-thiserror = "1.0"
+thiserror = "2.0"
 log = "0.4"
 env_logger = "0.11"
-rand = "0.8"
+rand = "0.10"
 hex = "0.4"
 uuid = { version = "1.8", features = ["v4"] }
 frappe-meta = { path = "../frappe-meta" }
 frappe-storage = { path = "../frappe-storage" }
+reqwest = { version = "0.13", features = ["json"] }
+futures-util = "0.3"
+actix-ws = "0.4.0"

@@ -7,6 +7,8 @@ use crate::middleware::tenant::TenantContext;
 use crate::middleware::auth::UserClaims;
 use frappe_meta::registry::SchemaRegistry;
 use frappe_meta::migration::SchemaManager;
+use crate::sse::sse_handler;
+use futures_util::StreamExt;
 
 pub type Db = Surreal<Client>;
 
@@ -25,8 +27,12 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             .route("/document/{doctype}/{id}", web::get().to(get_document))
             .route("/document/{doctype}/{id}", web::put().to(update_document))
             .route("/document/{doctype}/{id}", web::delete().to(delete_document))
+            .route("/document/{doctype}/{id}/submit", web::post().to(submit_document))
+            .route("/document/{doctype}/{id}/cancel", web::post().to(cancel_document))
+            .route("/events", web::get().to(sse_handler))
             .route("/press/provision", web::post().to(provision_tenant))
     );
+    cfg.route("/ws", web::get().to(ws_handler));
 }
 
 /// Create a new document in SurrealDB.
@@ -202,4 +208,136 @@ async fn provision_tenant(
         "status": "success",
         "message": format!("Tenant {} provisioned successfully", tenant_id)
     }))
+}
+
+/// Submit a document in SurrealDB.
+async fn submit_document(
+    db: web::Data<Db>,
+    tenant: web::ReqData<TenantContext>,
+    path: web::Path<(String, String)>,
+    registry: web::Data<SchemaRegistry>,
+) -> impl Responder {
+    let (doctype, id) = path.into_inner();
+    let tenant_id = &tenant.tenant_id;
+    let db = db.into_inner();
+
+    if let Err(e) = db.use_ns(tenant_id).use_db("frappe").await {
+        log::error!("Database namespace switch failed: {:?}", e);
+        return HttpResponse::InternalServerError().body("Database connection failure");
+    }
+
+    let doc: Option<Value> = match db.select((doctype.as_str(), id.as_str())).await {
+        Ok(d) => d,
+        Err(e) => {
+            log::error!("Select document failed: {:?}", e);
+            return HttpResponse::InternalServerError().body(format!("DB error: {:?}", e));
+        }
+    };
+
+    let doc_val = match doc {
+        Some(Value::Object(map)) => map,
+        _ => return HttpResponse::NotFound().finish(),
+    };
+
+    let mut new_doc_val = doc_val.clone();
+    new_doc_val.insert("docstatus".to_string(), Value::Number(1.into()));
+
+    let schema = match registry.get_schema(&doctype) {
+        Some(s) => s,
+        None => {
+            return HttpResponse::BadRequest().body(format!("Schema not found for doctype: {}", doctype));
+        }
+    };
+
+    if let Err(e) = frappe_framework::document::lifecycle::DocLifecycleController::validate_transition(&doc_val, &new_doc_val, &schema) {
+        return HttpResponse::BadRequest().body(format!("Validation failed: {:?}", e));
+    }
+
+    match db.update::<Option<Value>>((doctype.as_str(), id.as_str())).content(Value::Object(new_doc_val)).await {
+        Ok(Some(updated_doc)) => HttpResponse::Ok().json(updated_doc),
+        Ok(None) => HttpResponse::NotFound().finish(),
+        Err(e) => {
+            log::error!("Submit document failed: {:?}", e);
+            HttpResponse::InternalServerError().body(format!("DB error: {:?}", e))
+        }
+    }
+}
+
+/// Cancel a document in SurrealDB.
+async fn cancel_document(
+    db: web::Data<Db>,
+    tenant: web::ReqData<TenantContext>,
+    path: web::Path<(String, String)>,
+    registry: web::Data<SchemaRegistry>,
+) -> impl Responder {
+    let (doctype, id) = path.into_inner();
+    let tenant_id = &tenant.tenant_id;
+    let db = db.into_inner();
+
+    if let Err(e) = db.use_ns(tenant_id).use_db("frappe").await {
+        log::error!("Database namespace switch failed: {:?}", e);
+        return HttpResponse::InternalServerError().body("Database connection failure");
+    }
+
+    let doc: Option<Value> = match db.select((doctype.as_str(), id.as_str())).await {
+        Ok(d) => d,
+        Err(e) => {
+            log::error!("Select document failed: {:?}", e);
+            return HttpResponse::InternalServerError().body(format!("DB error: {:?}", e));
+        }
+    };
+
+    let doc_val = match doc {
+        Some(Value::Object(map)) => map,
+        _ => return HttpResponse::NotFound().finish(),
+    };
+
+    let mut new_doc_val = doc_val.clone();
+    new_doc_val.insert("docstatus".to_string(), Value::Number(2.into()));
+
+    let schema = match registry.get_schema(&doctype) {
+        Some(s) => s,
+        None => {
+            return HttpResponse::BadRequest().body(format!("Schema not found for doctype: {}", doctype));
+        }
+    };
+
+    if let Err(e) = frappe_framework::document::lifecycle::DocLifecycleController::validate_transition(&doc_val, &new_doc_val, &schema) {
+        return HttpResponse::BadRequest().body(format!("Validation failed: {:?}", e));
+    }
+
+    match db.update::<Option<Value>>((doctype.as_str(), id.as_str())).content(Value::Object(new_doc_val)).await {
+        Ok(Some(updated_doc)) => HttpResponse::Ok().json(updated_doc),
+        Ok(None) => HttpResponse::NotFound().finish(),
+        Err(e) => {
+            log::error!("Cancel document failed: {:?}", e);
+            HttpResponse::InternalServerError().body(format!("DB error: {:?}", e))
+        }
+    }
+}
+
+/// WebSocket route handler
+async fn ws_handler(
+    req: actix_web::HttpRequest,
+    stream: web::Payload,
+) -> Result<HttpResponse, actix_web::Error> {
+    let (res, mut session, mut msg_stream) = actix_ws::handle(&req, stream)?;
+    actix_web::rt::spawn(async move {
+        while let Some(Ok(msg)) = msg_stream.next().await {
+            match msg {
+                actix_ws::Message::Text(text) => {
+                    let _ = session.text(text).await;
+                }
+                actix_ws::Message::Ping(bytes) => {
+                    let _ = session.pong(&bytes).await;
+                }
+                actix_ws::Message::Close(reason) => {
+                    let _ = session.close(reason).await;
+                    break;
+                }
+                _ => {}
+            }
+        }
+    });
+    Ok(res)
 }

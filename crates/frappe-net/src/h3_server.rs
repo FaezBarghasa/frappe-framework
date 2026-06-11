@@ -3,6 +3,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::UdpSocket;
 use tokio::sync::mpsc;
+use crate::middleware::tenant::TenantContext;
 
 #[derive(thiserror::Error, Debug)]
 pub enum QuicheError {
@@ -19,6 +20,7 @@ pub struct H3Request {
     pub headers: Vec<quiche::h3::Header>,
     pub body: Vec<u8>,
     pub response_tx: mpsc::Sender<H3Response>,
+    pub tenant: Option<TenantContext>,
 }
 
 pub struct H3Response {
@@ -30,6 +32,7 @@ pub struct H3Response {
 struct ConnectionState {
     quic: quiche::Connection,
     h3: Option<quiche::h3::Connection>,
+    sni: Option<String>,
 }
 
 pub struct H3Server {
@@ -91,9 +94,24 @@ impl H3Server {
         let mut buf = [0u8; 65535];
         let mut out = [0u8; 65535];
         let mut conns: HashMap<quiche::ConnectionId<'static>, ConnectionState> = HashMap::new();
+        let mut tenant_map: HashMap<quiche::ConnectionId<'static>, TenantContext> = HashMap::new();
+
+        let mut idle_sweep = tokio::time::interval(std::time::Duration::from_secs(5));
 
         loop {
             tokio::select! {
+                _ = idle_sweep.tick() => {
+                    conns.retain(|cid, conn_state| {
+                        conn_state.quic.on_timeout();
+                        if conn_state.quic.is_closed() {
+                            log::info!("Connection {:?} closed by idle timeout", cid);
+                            tenant_map.remove(cid);
+                            false
+                        } else {
+                            true
+                        }
+                    });
+                }
                 rec = socket.recv_from(&mut buf) => {
                     match rec {
                         Ok((len, from)) => {
@@ -109,11 +127,44 @@ impl H3Server {
                             let scid = header.scid.clone();
                             let dcid = header.dcid.clone();
 
-                            let conn_state = conns.entry(dcid.clone()).or_insert_with(|| {
+                            if !conns.contains_key(&dcid) {
                                 let local_addr = socket.local_addr().unwrap();
-                                let c = quiche::accept(&scid, Some(&dcid), local_addr, from, &mut config).unwrap();
-                                ConnectionState { quic: c, h3: None }
-                            });
+                                let mut c = quiche::accept(&scid, Some(&dcid), local_addr, from, &mut config).unwrap();
+                                let sni = c.server_name().map(|s| s.to_string());
+                                log::info!("New QUIC connection from {:?}, SNI: {:?}", from, sni);
+
+                                // Pre-resolve tenant context
+                                let tenant_context = if let Some(ref sni_str) = sni {
+                                    let host_no_port = sni_str.split(':').next().unwrap_or(sni_str);
+                                    let tenant_id = if host_no_port == "localhost" || host_no_port == "127.0.0.1" {
+                                        "default_site".to_string()
+                                    } else {
+                                        let parts: Vec<&str> = host_no_port.split('.').collect();
+                                        if parts.len() > 1 {
+                                            parts[0].to_string()
+                                        } else {
+                                            "default_site".to_string()
+                                        }
+                                    };
+                                    let sanitized_tenant_id: String = tenant_id
+                                        .chars()
+                                        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '_' })
+                                        .collect();
+                                    TenantContext {
+                                        tenant_id: sanitized_tenant_id,
+                                        namespace: "frappe_cloud".to_string(),
+                                    }
+                                } else {
+                                    TenantContext {
+                                        tenant_id: "default_site".to_string(),
+                                        namespace: "frappe_cloud".to_string(),
+                                    }
+                                };
+                                tenant_map.insert(dcid.clone(), tenant_context);
+                                conns.insert(dcid.clone(), ConnectionState { quic: c, h3: None, sni });
+                            }
+
+                            let conn_state = conns.get_mut(&dcid).unwrap();
 
                             let recv_info = quiche::RecvInfo {
                                 to: socket.local_addr().unwrap(),
@@ -145,6 +196,7 @@ impl H3Server {
                                         match h3_conn.poll(&mut conn_state.quic) {
                                             Ok((stream_id, quiche::h3::Event::Headers { list, .. })) => {
                                                 _headers = list;
+                                                let tenant_ctx = tenant_map.get(&dcid).cloned();
                                                 // Wait for finished request
                                                 let (resp_tx, mut resp_rx) = mpsc::channel(1);
                                                 let h3_req = H3Request {
@@ -152,6 +204,7 @@ impl H3Server {
                                                     headers: _headers.clone(),
                                                     body: Vec::new(),
                                                     response_tx: resp_tx,
+                                                    tenant: tenant_ctx,
                                                 };
                                                 let _ = request_tx.send(h3_req).await;
 
@@ -195,6 +248,12 @@ impl H3Server {
                                         break;
                                     }
                                 }
+                            }
+
+                            if conn_state.quic.is_closed() {
+                                log::info!("Connection {:?} closed", dcid);
+                                conns.remove(&dcid);
+                                tenant_map.remove(&dcid);
                             }
                         }
                         Err(e) => {
