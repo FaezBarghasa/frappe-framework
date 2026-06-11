@@ -6,6 +6,13 @@
       <sourceFolder url="file://$MODULE_DIR$/crates/frappe-net/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/crates/frappe-storage/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/frappe-builder/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/frappe-drive/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/frappe-insights/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/frappe-meta/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/frappe-net/benches" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/frappe-net/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/tests" isTestSource="true" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>
     <orderEntry type="inheritedJdk" />
