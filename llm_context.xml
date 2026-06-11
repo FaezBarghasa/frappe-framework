@@ -4,9 +4,9 @@
         <name>frappe-framework</name>
         <description>Core framework components for the Rust ERPNext rewrite.</description>
     </project>
-    <architecture_notes>This workspace acts as the engine, providing the multi-tenant QUIC network layer (frappe-net), dynamic schema compiler (frappe-meta), and sandboxed Rhai scripting (frappe-framework core).</architecture_notes>
+    <architecture_notes>This workspace acts as the engine, providing the multi-tenant HTTP/3 network layer (frappe-net), dynamic SurrealQL schema compiler (frappe-meta), content-addressed storage (frappe-storage), and sandboxed Rhai scripting engine with AST caching.</architecture_notes>
     <coding_standards>
         <standard>No placeholder blocks or `todo!` stubs are permitted.</standard>
-        <standard>Utilize specific data typing.</standard>
+        <standard>Utilize specific data typing and strict bounds checks on file system access.</standard>
     </coding_standards>
 </llm_context>

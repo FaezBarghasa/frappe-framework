@@ -1,7 +1,7 @@
 <project name="frappe-framework-core">
     <system_context>
-        Asynchronous network gateway, concurrent metadata registry, content-addressed storage core, and robust document business logic layer.
-        Target Stack: Tokio 1.52.3, Actix-Web 4.13.0, SurrealDB 3.0.5, Pasetors 0.7.8, Quiche 0.29.0, Simd-JSON 0.14, Rhai 1.19.0.
+        Asynchronous network gateway, concurrent metadata registry, content-addressed storage core, OLAP engine, and robust document business logic layer.
+        Target Stack: Tokio 1.52.3, SurrealDB 3.0.5, Quiche 0.29.0, Simd-JSON 0.14, Rhai 1.19.0.
     </system_context>
 
     <directory_structure>
@@ -15,11 +15,13 @@
         │       ├── scripting.rs
         │       └── permissions.rs
         └── crates/
-            ├── frappe-net/          # Web, Routing, Auth, and UDP QUIC Gateway
+            ├── frappe-net/          # Web, Routing, Auth, Webhook Worker, and UDP HTTP/3 Gateway
             │   └── src/
             │       ├── lib.rs
             │       ├── h3_server.rs
             │       ├── routes.rs
+            │       ├── sse.rs
+            │       ├── webhook_worker.rs
             │       └── middleware/
             │           ├── tenant.rs
             │           └── auth.rs
@@ -27,25 +29,40 @@
             │   └── src/
             │       ├── lib.rs
             │       ├── schema.rs
-            │       └── registry.rs
-            └── frappe-storage/      # Content-addressable file storage engine
+            │       ├── registry.rs
+            │       ├── schema_compiler.rs
+            │       └── migration.rs
+            ├── frappe-storage/      # Content-addressable file storage engine
+            │   └── src/
+            │       ├── lib.rs
+            │       └── local_fs.rs
+            ├── frappe-insights/     # OLAP database analyzer
+            │   └── src/
+            │       ├── lib.rs
+            │       └── olap.rs
+            ├── frappe-builder/      # Web compiler / asset builder
+            │   └── src/
+            │       ├── lib.rs
+            │       └── compiler.rs
+            └── frappe-drive/        # File synchronization orchestrator
                 └── src/
                     ├── lib.rs
-                    └── local_fs.rs
+                    ├── sync.rs
+                    └── press_orchestrator.rs
     </directory_structure>
 
     <key_invariants>
         <invariant name="HTTP/3 Connection State">
             The quiche::h3::Connection is stateful and is persisted across UDP packets in the HashMap inside ConnectionState. Do not reconstruct on every poll.
         </invariant>
-        <invariant name="PASETO Token Middleware">
-            Token validation uses pasetors::local::decrypt matching SymmetricKey&lt;V4&gt; keys. Ephemeral fallback keys must be filled, not reassigned, to prevent compiler warnings.
+        <invariant name="Webhook Worker with Backoff">
+            Background webhook jobs must retry using an exponential backoff schedule (2s, 4s, 8s, 16s, 32s) up to the specified max_retries limit.
         </invariant>
         <invariant name="Path Traversal Protection">
             Local FS operations validate bounds using canonicalized directories to prevent traversal breakout.
         </invariant>
         <invariant name="Document Lifecycle">
-            Documents must strictly follow the Draft (0) -> Submitted (1) -> Cancelled (2) state machine. Submitted documents cannot be modified except for explicitly allowed fields. Cancelled documents are completely locked.
+            Documents must strictly follow the Draft (0) -> Submitted (1) -> Cancelled (2) state machine. Submitted documents cannot be modified except for explicitly allowed fields.
         </invariant>
         <invariant name="Scripting Sandbox">
             Rhai scripting environment must remain sandboxed to prevent resource exhaustion (max_operations) and restrict database operations to synchronous helpers within the async context.
