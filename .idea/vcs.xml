@@ -2,6 +2,10 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/target_cli/debug/build/boring-sys-5de8134915c91b65/out/boringssl" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/target_cli/debug/build/boring-sys-953f6f229569ef71/out/boringssl" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/target_cli/debug/build/boring-sys-9c7bc3beb4580911/out/boringssl" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/target_cli/release/build/boring-sys-05139a16ff71c3ea/out/boringssl" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/target_stable/debug/build/boring-sys-e22c7a7934a17417/out/boringssl" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/target_stable/debug/build/boring-sys-fbcb63345a5d7aa6/out/boringssl" vcs="Git" />
   </component>

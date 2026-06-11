@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<llm_context>
+    <project>
+        <name>frappe-framework</name>
+        <description>Core framework components for the Rust ERPNext rewrite.</description>
+    </project>
+    <architecture_notes>This workspace acts as the engine, providing the multi-tenant QUIC network layer (frappe-net), dynamic schema compiler (frappe-meta), and sandboxed Rhai scripting (frappe-framework core).</architecture_notes>
+    <coding_standards>
+        <standard>No placeholder blocks or `todo!` stubs are permitted.</standard>
+        <standard>Utilize specific data typing.</standard>
+    </coding_standards>
+</llm_context>
